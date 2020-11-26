@@ -34,7 +34,7 @@ type Derecurs struct {
 }
 
 // NewDerecurs creates new derecurs
-func NewDerecurs(forkFn ForkFn, mergeFn MergeFn, forkTimeOut time.Duration) *Derecurs {
+func NewDerecurs(forkFn ForkFn, mergeFn MergeFn) *Derecurs {
 	return &Derecurs{
 		forkFn:                   forkFn,
 		mergeFn:                  mergeFn,

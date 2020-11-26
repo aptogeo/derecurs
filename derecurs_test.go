@@ -39,7 +39,6 @@ func Test(t *testing.T) {
 			}
 			return previous.(*res).addAtomic(current.(*res))
 		},
-		100*time.Millisecond,
 	)
 	d.Add(int64(1))
 	d.Start()
@@ -63,7 +62,6 @@ func Test(t *testing.T) {
 			}
 			return previous.(*res).addAtomic(current.(*res))
 		},
-		100*time.Millisecond,
 	)
 	d.Add(int64(1))
 	d.StartPool(runtime.NumCPU())
