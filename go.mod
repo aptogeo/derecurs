@@ -2,5 +2,4 @@ module github.com/aptogeo/derecurs
 
 go 1.12
 
-require (
-)
+require github.com/stretchr/testify v1.6.1

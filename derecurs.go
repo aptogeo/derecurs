@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+const (
+	// DefaultPoolSize is default pool size
+	DefaultPoolSize = 8
+	// DefaultCapacity is default capacity
+	DefaultCapacity = 10000
+)
+
 // InputParameters type
 type InputParameters interface{}
 
@@ -38,7 +45,7 @@ func NewDerecurs(forkFn ForkFn, mergeFn MergeFn) *Derecurs {
 	return &Derecurs{
 		forkFn:                   forkFn,
 		mergeFn:                  mergeFn,
-		queue:                    newFnQueue(10000),
+		queue:                    newFnQueue(DefaultCapacity),
 		ForkTimeOut:              100 * time.Millisecond,
 		StopIfForkTimeOutElapsed: true,
 	}
@@ -58,68 +65,47 @@ func (d *Derecurs) AddArray(ipa InputParametersArray) {
 
 // Start starts
 func (d *Derecurs) Start() {
-	for {
-		if d.stop > 0 {
-			break
-		}
-		fn := d.queue.dequeue()
-		if fn == nil {
-			time.Sleep(d.ForkTimeOut)
-			fn = d.queue.dequeue()
-			if fn == nil {
-				if d.StopIfForkTimeOutElapsed {
-					atomic.AddInt32(&d.stop, 1)
-					break
-				} else {
-					continue
-				}
-			}
-		}
-		d.wgAdd()
-		go func() {
-			defer d.wgDone()
-			ipa, result := fn()
-			if ipa != nil {
-				d.fork(ipa)
-			}
-			d.result = d.mergeFn(d.result, result)
-		}()
-	}
-	d.wg.Wait()
+	d.StartPool(DefaultPoolSize)
 }
 
 // StartPool starts in pool
-func (d *Derecurs) StartPool(num int) {
-	for i := 0; i < num; i++ {
-		d.wgAdd()
-		go func() {
-			defer d.wgDone()
-			for {
-				if d.stop > 0 {
-					break
-				}
-				fn := d.queue.dequeue()
-				if fn == nil {
-					time.Sleep(d.ForkTimeOut)
-					fn = d.queue.dequeue()
+func (d *Derecurs) StartPool(size int) {
+	d.wgAdd()
+	d.stop = 0
+	go func() {
+		defer d.wgDone()
+		for i := 0; i < size; i++ {
+			d.wgAdd()
+			go func() {
+				defer d.wgDone()
+				for {
+					if d.stop > 0 {
+						break
+					}
+					fn := d.queue.dequeue()
 					if fn == nil {
-						if d.StopIfForkTimeOutElapsed {
-							atomic.AddInt32(&d.stop, 1)
-							break
-						} else {
-							continue
+						time.Sleep(d.ForkTimeOut)
+						fn = d.queue.dequeue()
+						if fn == nil {
+							if d.StopIfForkTimeOutElapsed {
+								atomic.AddInt32(&d.stop, 1)
+								break
+							} else {
+								continue
+							}
 						}
 					}
+					ipa, result := fn()
+					if ipa != nil {
+						for _, ip := range ipa {
+							d.queue.enqueue(func() (InputParametersArray, ComputedResult) { return d.forkFn(ip) })
+						}
+					}
+					d.result = d.mergeFn(d.result, result)
 				}
-				ipa, result := fn()
-				if ipa != nil {
-					d.fork(ipa)
-				}
-				d.result = d.mergeFn(d.result, result)
-			}
-		}()
-	}
-	d.wg.Wait()
+			}()
+		}
+	}()
 }
 
 // Stop stops
@@ -127,18 +113,18 @@ func (d *Derecurs) Stop() {
 	atomic.AddInt32(&d.stop, 1)
 }
 
-// GetResult gets result
-func (d *Derecurs) GetResult() ComputedResult {
-	return d.result
+// Reset resets
+func (d *Derecurs) Reset() {
+	d.Stop()
+	d.wg.Wait()
+	d.queue = newFnQueue(DefaultCapacity)
+	d.result = nil
 }
 
-func (d *Derecurs) fork(ipa InputParametersArray) {
-	for _, ip := range ipa {
-		if d.stop > 0 {
-			break
-		}
-		d.queue.enqueue(func() (InputParametersArray, ComputedResult) { return d.forkFn(ip) })
-	}
+// WaitResult waits end and gets result
+func (d *Derecurs) WaitResult() ComputedResult {
+	d.wg.Wait()
+	return d.result
 }
 
 func (d *Derecurs) wgAdd() {
@@ -161,15 +147,15 @@ func newFnQueue(capacity int) *fnQueue {
 }
 
 func (q *fnQueue) enqueue(fn func() (InputParametersArray, ComputedResult)) {
-	q.lock.Lock()
 	defer q.lock.Unlock()
+	q.lock.Lock()
 	q.slice = append(q.slice, fn)
 }
 
 func (q *fnQueue) dequeue() func() (InputParametersArray, ComputedResult) {
+	defer q.lock.Unlock()
+	q.lock.Lock()
 	if len(q.slice) > 0 {
-		q.lock.Lock()
-		defer q.lock.Unlock()
 		fn := q.slice[0]
 		q.slice = q.slice[1:]
 		return fn

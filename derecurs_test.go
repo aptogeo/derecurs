@@ -10,18 +10,59 @@ import (
 	"time"
 
 	"github.com/aptogeo/derecurs"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
 	maxRound int64 = 7
 )
 
-func Test(t *testing.T) {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+func TestDefault(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(0)
+	res := d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
 
-	var startTime time.Time
+func TestPoolSize1(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(1)
+	res := d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
 
-	startTime = time.Now()
+func TestPoolSize2(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(2)
+	res := d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
+
+func TestPoolSize4(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(4)
+	res := d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
+
+func TestWithPause(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(0)
+	time.Sleep(100 * time.Millisecond)
+	d.Stop()
+	res := d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs intermediate result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	d.Start()
+	res = d.WaitResult()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs final: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
+
+func createAndStart(size int) *derecurs.Derecurs {
 	d := derecurs.NewDerecurs(
 		func(in derecurs.InputParameters) (derecurs.InputParametersArray, derecurs.ComputedResult) {
 			ins := make(derecurs.InputParametersArray, 0, 8)
@@ -37,49 +78,34 @@ func Test(t *testing.T) {
 			if previous == nil {
 				return current
 			}
-			return previous.(*res).addAtomic(current.(*res))
+			return previous.(*result).addAtomic(current.(*result))
 		},
 	)
 	d.Add(int64(1))
-	d.Start()
-	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs %v in %v ms", d.GetResult().(*res).nb, time.Now().Sub(startTime).Milliseconds()))
-
-	startTime = time.Now()
-	d = derecurs.NewDerecurs(
-		func(in derecurs.InputParameters) (derecurs.InputParametersArray, derecurs.ComputedResult) {
-			ins := make(derecurs.InputParametersArray, 0, 8)
-			round := in.(int64)
-			if round <= maxRound {
-				for i := 0; i < 8; i++ {
-					ins = append(ins, round+1)
-				}
-			}
-			return ins, calc(round)
-		},
-		func(previous derecurs.ComputedResult, current derecurs.ComputedResult) derecurs.ComputedResult {
-			if previous == nil {
-				return current
-			}
-			return previous.(*res).addAtomic(current.(*res))
-		},
-	)
-	d.Add(int64(1))
-	d.StartPool(runtime.NumCPU())
-	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs pool %v in %v ms", d.GetResult().(*res).nb, time.Now().Sub(startTime).Milliseconds()))
+	if size <= 0 {
+		runtime.GOMAXPROCS(derecurs.DefaultPoolSize)
+		d.Start()
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs started with default pool size %v", derecurs.DefaultPoolSize))
+	} else {
+		runtime.GOMAXPROCS(size)
+		d.StartPool(size)
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs started with pool size %v", size))
+	}
+	return d
 }
 
-type res struct {
+type result struct {
 	nb  int64
 	dur int64
 }
 
-func (r *res) addAtomic(a *res) *res {
+func (r *result) addAtomic(a *result) *result {
 	atomic.AddInt64(&r.nb, a.nb)
 	atomic.AddInt64(&r.dur, a.dur)
 	return r
 }
 
-func calc(val int64) *res {
+func calc(val int64) *result {
 	startTime := time.Now()
 	var m int64 = 100
 	var i int64
@@ -87,5 +113,5 @@ func calc(val int64) *res {
 		math.Cos(float64(val+i) / float64(2*10))
 	}
 	d := int64(time.Now().Sub(startTime))
-	return &res{1, d}
+	return &result{1, d}
 }
