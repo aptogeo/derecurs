@@ -19,18 +19,18 @@ type InputParameters interface{}
 // InputParametersArray type
 type InputParametersArray []InputParameters
 
-// ComputedResult type
-type ComputedResult interface{}
+// Data type
+type Data interface{}
 
 // ForkFn type
-type ForkFn func(in InputParameters) (InputParametersArray, ComputedResult)
+type ForkFn func(in InputParameters) (InputParametersArray, Data)
 
 // MergeFn type
-type MergeFn func(previous ComputedResult, current ComputedResult) ComputedResult
+type MergeFn func(previous Data, current Data) Data
 
 // Derecurs type
 type Derecurs struct {
-	result                   ComputedResult
+	data                     Data
 	queue                    *Queue
 	forkFn                   ForkFn
 	mergeFn                  MergeFn
@@ -49,6 +49,11 @@ func NewDerecurs(forkFn ForkFn, mergeFn MergeFn) *Derecurs {
 		ForkTimeOut:              100 * time.Millisecond,
 		StopIfForkTimeOutElapsed: true,
 	}
+}
+
+// SetInitialData sets initial data
+func (d *Derecurs) SetInitialData(data Data) {
+	d.data = data
 }
 
 // Add adds input parameters
@@ -94,12 +99,12 @@ func (d *Derecurs) StartPool(size int) {
 							}
 						}
 					}
-					ipa, result := d.forkFn(ip)
+					ipa, data := d.forkFn(ip)
 					if ipa != nil {
 						d.queue.Enqueue(ipa)
 					}
 					lock.Lock()
-					d.result = d.mergeFn(d.result, result)
+					d.data = d.mergeFn(d.data, data)
 					lock.Unlock()
 				}
 			}()
@@ -117,13 +122,13 @@ func (d *Derecurs) Reset() {
 	d.Stop()
 	d.wg.Wait()
 	d.queue = NewQueue(DefaultCapacity)
-	d.result = nil
+	d.data = nil
 }
 
-// WaitResult waits end and gets result
-func (d *Derecurs) WaitResult() ComputedResult {
+// Wait waits end and gets result Data
+func (d *Derecurs) Wait() Data {
 	d.wg.Wait()
-	return d.result
+	return d.data
 }
 
 func (d *Derecurs) wgAdd() {

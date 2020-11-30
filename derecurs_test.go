@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ var (
 func TestDefault(t *testing.T) {
 	startTime := time.Now()
 	d := createAndStart(0)
-	res := d.WaitResult()
+	res := d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
@@ -28,7 +27,7 @@ func TestDefault(t *testing.T) {
 func TestPoolSize1(t *testing.T) {
 	startTime := time.Now()
 	d := createAndStart(1)
-	res := d.WaitResult()
+	res := d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
@@ -36,7 +35,7 @@ func TestPoolSize1(t *testing.T) {
 func TestPoolSize2(t *testing.T) {
 	startTime := time.Now()
 	d := createAndStart(2)
-	res := d.WaitResult()
+	res := d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
@@ -44,7 +43,7 @@ func TestPoolSize2(t *testing.T) {
 func TestPoolSize4(t *testing.T) {
 	startTime := time.Now()
 	d := createAndStart(4)
-	res := d.WaitResult()
+	res := d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
@@ -54,17 +53,17 @@ func TestWithPause(t *testing.T) {
 	d := createAndStart(0)
 	time.Sleep(100 * time.Millisecond)
 	d.Stop()
-	res := d.WaitResult()
+	res := d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs intermediate result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	d.Start()
-	res = d.WaitResult()
+	res = d.Wait()
 	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs final: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
 
 func createAndStart(size int) *derecurs.Derecurs {
 	d := derecurs.NewDerecurs(
-		func(in derecurs.InputParameters) (derecurs.InputParametersArray, derecurs.ComputedResult) {
+		func(in derecurs.InputParameters) (derecurs.InputParametersArray, derecurs.Data) {
 			ins := make(derecurs.InputParametersArray, 0, 8)
 			round := in.(int64)
 			if round <= maxRound {
@@ -74,11 +73,11 @@ func createAndStart(size int) *derecurs.Derecurs {
 			}
 			return ins, calc(round)
 		},
-		func(previous derecurs.ComputedResult, current derecurs.ComputedResult) derecurs.ComputedResult {
+		func(previous derecurs.Data, current derecurs.Data) derecurs.Data {
 			if previous == nil {
 				return current
 			}
-			return previous.(*result).addAtomic(current.(*result))
+			return &result{previous.(*result).nb + current.(*result).nb, previous.(*result).dur + current.(*result).dur}
 		},
 	)
 	d.Add(int64(1))
@@ -94,15 +93,27 @@ func createAndStart(size int) *derecurs.Derecurs {
 	return d
 }
 
+func TestRecursive(t *testing.T) {
+	startTime := time.Now()
+	res := recursiveCalc(1)
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("recursive: %v in %v ms", res.nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.nb, int64(2396745))
+}
+
+func recursiveCalc(round int64) *result {
+	res := calc(round)
+	if round <= maxRound {
+		for i := 0; i < 8; i++ {
+			res2 := recursiveCalc(round + 1)
+			res = &result{res.nb + res2.nb, res.dur + res2.dur}
+		}
+	}
+	return res
+}
+
 type result struct {
 	nb  int64
 	dur int64
-}
-
-func (r *result) addAtomic(a *result) *result {
-	atomic.AddInt64(&r.nb, a.nb)
-	atomic.AddInt64(&r.dur, a.dur)
-	return r
 }
 
 func calc(val int64) *result {
