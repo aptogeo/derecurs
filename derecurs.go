@@ -1,6 +1,7 @@
 package derecurs
 
 import (
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,8 @@ const (
 	DefaultPoolSize = 8
 	// DefaultCapacity is default capacity
 	DefaultCapacity = 10000
+	// DefaultForkTimeOut is default fork timeout
+	DefaultForkTimeOut = 100 * time.Millisecond
 )
 
 // InputParameters type
@@ -34,8 +37,10 @@ type Derecurs struct {
 	queue                    *Queue
 	forkFn                   ForkFn
 	mergeFn                  MergeFn
+	StopAfterTime            time.Duration
 	ForkTimeOut              time.Duration
 	StopIfForkTimeOutElapsed bool
+	Random                   bool
 	stop                     int32
 	wg                       sync.WaitGroup
 }
@@ -48,6 +53,7 @@ func NewDerecurs(forkFn ForkFn, mergeFn MergeFn) *Derecurs {
 		queue:                    NewQueue(DefaultCapacity),
 		ForkTimeOut:              100 * time.Millisecond,
 		StopIfForkTimeOutElapsed: true,
+		Random:                   false,
 	}
 }
 
@@ -73,6 +79,7 @@ func (d *Derecurs) Start() {
 
 // StartPool starts in pool
 func (d *Derecurs) StartPool(size int) {
+	startTime := time.Now()
 	d.wgAdd()
 	d.stop = 0
 	var lock sync.Mutex
@@ -83,21 +90,35 @@ func (d *Derecurs) StartPool(size int) {
 			go func() {
 				defer d.wgDone()
 				for {
+					if d.StopAfterTime > 0 {
+						if time.Now().Sub(startTime) > d.StopAfterTime {
+							atomic.AddInt32(&d.stop, 1)
+						}
+					}
 					if d.stop > 0 {
 						break
 					}
-					ip := d.queue.Dequeue()
-					if ip == nil {
-						time.Sleep(d.ForkTimeOut)
+					forkStartTime := time.Now()
+					var ip InputParameters
+					if d.Random {
+						ip = d.queue.RandomDequeue()
+					} else {
+						ip = d.queue.Dequeue()
+					}
+					for ip == nil {
+						time.Sleep(d.ForkTimeOut / 10)
 						ip = d.queue.Dequeue()
 						if ip == nil {
-							if d.StopIfForkTimeOutElapsed {
-								atomic.AddInt32(&d.stop, 1)
+							if time.Now().Sub(forkStartTime) > d.ForkTimeOut {
+								if d.StopIfForkTimeOutElapsed {
+									atomic.AddInt32(&d.stop, 1)
+								}
 								break
-							} else {
-								continue
 							}
 						}
+					}
+					if ip == nil {
+						continue
 					}
 					ipa, data := d.forkFn(ip)
 					if ipa != nil {
@@ -121,7 +142,7 @@ func (d *Derecurs) Stop() {
 func (d *Derecurs) Reset() {
 	d.Stop()
 	d.wg.Wait()
-	d.queue = NewQueue(DefaultCapacity)
+	d.queue.Reset()
 	d.data = nil
 }
 
@@ -143,12 +164,14 @@ func (d *Derecurs) wgDone() {
 type Queue struct {
 	slice []InputParameters
 	lock  sync.Mutex
+	rand  *rand.Rand
 }
 
 // NewQueue creates new queue
 func NewQueue(capacity int) *Queue {
 	return &Queue{
 		slice: make([]InputParameters, 0, capacity),
+		rand:  rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -164,9 +187,25 @@ func (q *Queue) Dequeue() InputParameters {
 	defer q.lock.Unlock()
 	q.lock.Lock()
 	if len(q.slice) > 0 {
-		fn := q.slice[0]
+		v := q.slice[0]
 		q.slice = q.slice[1:]
-		return fn
+		return v
+	}
+	return nil
+}
+
+// RandomDequeue random dequeues (do not peserve queue order)
+func (q *Queue) RandomDequeue() InputParameters {
+	defer q.lock.Unlock()
+	q.lock.Lock()
+	l := len(q.slice)
+	if l > 0 {
+		i := rand.Intn(l)
+		v := q.slice[i]
+		l--
+		q.slice[i] = q.slice[l]
+		q.slice = q.slice[:l]
+		return v
 	}
 	return nil
 }
@@ -176,4 +215,11 @@ func (q *Queue) Len() int {
 	defer q.lock.Unlock()
 	q.lock.Lock()
 	return len(q.slice)
+}
+
+// Reset resets
+func (q *Queue) Reset() {
+	defer q.lock.Unlock()
+	q.lock.Lock()
+	q.slice = q.slice[:0]
 }

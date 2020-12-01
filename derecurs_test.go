@@ -61,6 +61,24 @@ func TestWithPause(t *testing.T) {
 	assert.Equal(t, res.(*result).nb, int64(2396745))
 }
 
+func TestStopAfter(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(0)
+	d.StopAfterTime = 10 * time.Millisecond
+	res := d.Wait()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs stop after result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.NotEqual(t, res.(*result).nb, int64(2396745))
+}
+
+func TestRandom(t *testing.T) {
+	startTime := time.Now()
+	d := createAndStart(0)
+	d.Random = true
+	res := d.Wait()
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("derecurs random result: %v in %v ms", res.(*result).nb, time.Now().Sub(startTime).Milliseconds()))
+	assert.Equal(t, res.(*result).nb, int64(2396745))
+}
+
 func createAndStart(size int) *derecurs.Derecurs {
 	d := derecurs.NewDerecurs(
 		func(in derecurs.InputParameters) (derecurs.InputParametersArray, derecurs.Data) {
