@@ -1,3 +1,5 @@
+github.com/aptogeo/queue v0.0.0-20201202124723-75adb2764ac3 h1:RL7RYwsWim4jX8m9Aa2u/MprgrPnSNoncQrUiSbMv1E=
+github.com/aptogeo/queue v0.0.0-20201202124723-75adb2764ac3/go.mod h1:eyIayPk1R6RHbabNoC5ZO9vobRg1N+LXU983uPGMqk0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
