@@ -27,12 +27,16 @@ type ForkFn func(inputParameters interface{}) (InputParametersArray, Data)
 // MergeFn type
 type MergeFn func(previous Data, current Data) Data
 
+// StopFn type
+type StopFn func(current Data) bool
+
 // Derecurs type
 type Derecurs struct {
 	data                     Data
 	queue                    *queue.Queue
 	forkFn                   ForkFn
 	mergeFn                  MergeFn
+	stopFn                   StopFn
 	stopAfterTime            time.Duration
 	forkTimeOut              time.Duration
 	stopIfForkTimeOutElapsed bool
@@ -51,6 +55,11 @@ func NewDerecurs(forkFn ForkFn, mergeFn MergeFn) *Derecurs {
 		stopIfForkTimeOutElapsed: true,
 		method:                   queue.Fifo,
 	}
+}
+
+// SetStopFn sets stopFn
+func (d *Derecurs) SetStopFn(stopFn StopFn) {
+	d.stopFn = stopFn
 }
 
 // SetInitialData sets initial data
@@ -142,6 +151,9 @@ func (d *Derecurs) StartPool(size int) {
 					}
 					lock.Lock()
 					d.data = d.mergeFn(d.data, data)
+					if d.stopFn != nil && d.stopFn(d.data) {
+						atomic.AddInt32(&d.stop, 1)
+					}
 					lock.Unlock()
 				}
 			}()
